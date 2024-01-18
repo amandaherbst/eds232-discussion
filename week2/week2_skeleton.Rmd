@@ -54,7 +54,7 @@ Additionally, we are going to binary encode these values. This means turning the
 
 ```{r}
 
-fish_clean = read_csv(here("discussion", "data", "fish_clean.csv")) %>% 
+fish_clean = read_csv(here("week2", "fish_clean.csv")) %>% 
   filter(habitat == "demersal" | habitat == "reef-associated") %>% 
   mutate(habitat = case_when(
     habitat == "demersal" ~ 0,
@@ -109,15 +109,20 @@ Today, we will look at preforming linear regression on this data set. We will co
 Here, we will use functions from the `rsample` package within `TidyModels`
 
 ```{r}
-
+?initial_split
 ```
 
 
 ```{r}
- #split data stratified by survived
+ #split data 
+data_split <- initial_split(fish_clean, prop = 0.8, strata = habitat) 
+# strata tries to even out the fact that there's more samples of one habitat than the other
+# **preserves proportional relationship across training and test data, while still keeping it randomized
 
  #get training data
+train <- training(data_split)
  #get testing data
+test <- testing(data_split)
 
 head(train)
 head(test)
@@ -128,14 +133,20 @@ head(test)
 After splitting my data, the first step is to create a recipe indicating the formula for the model and any pre-processing steps I want to preform on my data. Here we will use the `recipes` package.
 
 ```{r}
+?recipe
 
+?prep
+?bake
+# can use these to check what your preprocessing steps do to the training data
 ```
 
 
 I will be predicted habitat based on trophic level, length, minimum depth, maximum depth, vulnerability, body shape, and food source type. We will be normalizing all numeric predictors
 
 ```{r}
-
+# create model recipe
+fish_recipe <- recipe(habitat ~ shape_impute + food_impute + shallow_impute + deep_impute + vulnerability + length_impute + trophic_level_impute, data = train) %>% 
+  step_normalize(all_numeric_predictors()) # normalize all numeric predictors
 ```
 
 #### Model 1: Linear Regression
@@ -143,23 +154,27 @@ I will be predicted habitat based on trophic level, length, minimum depth, maxim
 The model specifications in `TidyModels` are within the `parsnip` package
 
 ```{r}
-
+?linear_reg
 ```
 
 
 ```{r}
-
+lm_model <- linear_reg() %>% # set linear regression model
+  set_engine("lm") %>% # use lm engine
+  set_mode("regression") # set regression as mode
 ```
 
 After specifiying the model, we can create a workflow from the `workflows` package
 
 ```{r}
-
+?workflow
 ```
 
 
 ```{r}
-
+lm_workflow <- workflow() %>% # create workflow
+  add_recipe(fish_recipe) %>% # add recipe
+  add_model(lm_model) # add lm model
 
 lm_workflow
 ```
@@ -173,17 +188,19 @@ Now we will "fit" the model, again using `parsnip`.
 ```
 
 ```{r, eval = FALSE}
-
+train_fit <- fit(lm_workflow, train) # fit the lm model to the training set
 
 train_fit
 ```
 
 ```{r}
-
+train_predict <- predict(object = train_fit, new_data = train) %>% # predict the training set
+  bind_cols(train) # bind the training set column to prediction
 ```
 
 ```{r}
-
+test_predict <- predict(train_fit, test) %>% # get prediction probabilities for test
+  bind_cols(test) # bind to testing column
 
 head(test_predict)
 ```
@@ -198,14 +215,19 @@ Finally, we will calulate some metrics for preformance, using the `yardstick` pa
 
 
 ```{r}
+train_metrics <- train_predict %>% 
+  yardstick::metrics(habitat, .pred)
 
 train_metrics
 ```
 
 ```{r}
-
+test_metrics <- test_predict %>% 
+  yardstick::metrics(habitat, .pred)
 test_metrics
 ```
+
+**RMSE is relative to range of data. data that 0-100, a 0.45 RMSE would be pretty good, but when habitat is 0 or 1, 0.45 is not great**
 
 ```{r}
 
